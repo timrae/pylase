@@ -1,0 +1,20 @@
+<!DOCTYPE RCC><RCC version="1.0">
+  <qresource>
+    <file alias="measure.png">icons/measure.png</file>
+    <file alias="measure_small.png">icons/measure_small.png</file>
+    <file alias="arrow-down.png">icons/arrow-down.png</file>
+    <file alias="arrow-up.png">icons/arrow-up.png</file>
+    <file alias="arrow-left.png">icons/arrow-left.png</file>
+    <file alias="arrow-right.png">icons/arrow-right.png</file>
+    <file alias="application-exit.png">icons/application-exit.png</file>
+    <file alias="export.png">icons/export.png</file>
+    <file alias="print.png">icons/print.png</file>
+    <file alias="laser.png">icons/laser.png</file>
+    <file alias="open-file-icon.png">icons/open-file-icon.png</file>
+    <file alias="console.png">icons/console.png</file>
+    <file alias="curvefit.png">icons/curvefit.png</file>
+    <file alias="cooler.png">icons/cooler.png</file>
+    <file alias="xy_motor.png">icons/xy_motor.png</file>
+    <file alias="xy_piezo.png">icons/xy_piezo.png</file>
+  </qresource>
+</RCC>
