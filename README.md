@@ -11,3 +11,5 @@ Here are some of it's other capabilities:
 * Semi-automatic optical alignment (requires a compatible flexure stage)
 
 This software is intended to be used together with my library of python drivers for communicating with scientific instruments called "drivepy". It's provided entirely as-is with the hope that someone somewhere finds it useful.
+
+![Screenshot](screenshot.png)
