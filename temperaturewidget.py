@@ -1,4 +1,4 @@
-from __future__ import division
+﻿from __future__ import division
 import sip
 sip.setapi("QString", 2)
 sip.setapi('QVariant', 2)
@@ -22,13 +22,13 @@ class TemperatureMonitor(QtGui.QDockWidget):
         self.initializeWindow_()
         QtCore.QCoreApplication.processEvents()
         try:
-            self.tcThread=QtCore.QThread()
+            #self.tcThread=QtCore.QThread()
             self.tempController=TemperatureController()
-            self.tempController.moveToThread(self.tcThread)
-            self.tcThread.started.connect(self.tempController.getTemperature)
+            #self.tempController.moveToThread(self.tcThread)
+            #self.tcThread.started.connect(self.tempController.getTemperature)
             self.connect(self.tempController,QtCore.SIGNAL("tempDataReady"),self.updateTemperature)
             self.connect(self.tempController,QtCore.SIGNAL("setTempDataReady"),self.updateSetTemperature)
-            self.tcThread.start() 
+            #self.tcThread.start() 
             self.live=True
             self.timerID=self.startTimer(INTERVAL)          
         except Exception, e:
@@ -51,7 +51,7 @@ class TemperatureMonitor(QtGui.QDockWidget):
         self.temperatureDisplay.setFont(QtGui.QFont("Arial", 20))
         self.temperatureDisplay.setAlignment(Qt.AlignCenter)
         self.setTemperatureDisplay=QtGui.QLabel()
-        self.setTemperatureDisplay.setFont(QtGui.QFont("Arial", 20))		
+        self.setTemperatureDisplay.setFont(QtGui.QFont("Arial", 20))        
         self.setTemperatureDisplay.setAlignment(Qt.AlignCenter)
         setTemperatureLabel=QtGui.QLabel("Set Temp (K):")
         self.setTemperatureEdit=QtGui.QLineEdit()
@@ -61,7 +61,7 @@ class TemperatureMonitor(QtGui.QDockWidget):
         layout.addWidget(tempLabel)
         layout.addWidget(self.temperatureDisplay)
         layout.addWidget(setTempLabel)
-        layout.addWidget(self.setTemperatureDisplay)		
+        layout.addWidget(self.setTemperatureDisplay)        
         layout.addWidget(setTemperatureLabel)
         layout.addWidget(self.setTemperatureEdit)
         layout.addWidget(self.setTemperatureButton)
@@ -99,12 +99,12 @@ class TemperatureMonitor(QtGui.QDockWidget):
 
 
 if __name__=="__main__":
-	app=QtGui.QApplication(sys.argv)
-	app.setApplicationName(appName)  
-	app.setOrganizationName("University of Tokyo")
-	app.setOrganizationDomain("u-tokyo.ac.jp")
-	app.setWindowIcon(QtGui.QIcon(":\laser.png"))
-	# Spacer to show an initial dialog asking if the user wants to create a new, or open existing session  
-	form=TemperatureMonitor()
-	form.show()
-	app.exec_()
+    app=QtGui.QApplication(sys.argv)
+    app.setApplicationName(appName)  
+    app.setOrganizationName("University of Tokyo")
+    app.setOrganizationDomain("u-tokyo.ac.jp")
+    app.setWindowIcon(QtGui.QIcon(":\laser.png"))
+    # Spacer to show an initial dialog asking if the user wants to create a new, or open existing session  
+    form=TemperatureMonitor()
+    form.show()
+    app.exec_()

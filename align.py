@@ -1,4 +1,4 @@
-from __future__ import division   
+﻿from __future__ import division   
 from PyQt4 import QtCore
 from drivepy.thorlabs.aptlib import AptPiezo, AptMotor
 from drivepy.thorlabs.aptlib import aptconsts as consts
@@ -53,26 +53,27 @@ class _Align(QtCore.QObject):
         grid span (i.e. +/- how much to search over) in um
         a profitFunction method which gives the profit for optimization (e.g. the total power) """
         # Setup the input variables properly
-        if p0==None: p0=self.coordinates
-        if span==None: span=self.ctrl.GetMaxTravel()/2
-        if profitFunction==None: 
+        if p0 is None: p0=self.coordinates
+        if span is None: span=self.ctrl.GetMaxTravel()/2
+        if profitFunction is None: 
             pm=PowerMeter()
             profitFunction=lambda : pm.readPowerAuto()
         # Create a discrete grid with specified span and resolution centered at p0
         x,y=self.gridPoints(span,res,p0)
         #x,y=self.gridPoints(maxTravel/2,ROUGH_GRID_RES,(maxTravel/2,maxTravel/2))
-        self.coordinates=self.searchGrid(x,y,p0,profitFunction)
+        ix, iy = self.searchGrid(x,y,p0,profitFunction)
+        self.coordinates = (x[ix], y[iy])
         self.moveTo(self.coordinates)
         finalProfit=profitFunction()
         # TO DO: send a pyqt signal when finished so it can be run in a separate thread
         return (self.coordinates,finalProfit)
 
-    def findFirstSignal(self,p0=None,res=FIRST_SIGNAL_RESOLUTION,span=None,profitFunction=None,threshold=None,plotFlag=False):
+    def findFirstSignal(self,p0=None,res=FIRST_SIGNAL_RESOLUTION,span=None,profitFunction=None,threshold=None, softThreshold=None, plotFlag=False):
         """ Automatically look for the first sign of a signal by measuring across a grid, outwards from the center
         point, and stopping the measurement prematurely if the threshold is exceeded for profitFunction """
-        if p0==None: p0=self.ctrl.getCoordinates()
-        if span==None: span=self.ctrl.GetMaxTravel()/2
-        if profitFunction==None: 
+        if p0 is None: p0=self.ctrl.getCoordinates()
+        if span is None: span=self.ctrl.GetMaxTravel()/2
+        if profitFunction is None: 
             pm=PowerMeter()
             profitFunction=lambda : pm.readPowerAuto(tau=1)
         # If the current center point already has a signal then stop the search before it begins
@@ -85,10 +86,7 @@ class _Align(QtCore.QObject):
         # Permute the x values so that they start at the center and move outwards
         xp,xip=self.permuteOutwards(x)
         #yp,yip=self.permuteOutwards(y) # This may significantly slow down the motor movement
-        P=self.measureGrid(xp,y,profitFunction,threshold)
-        # Return P into regular grid if x,y were re-ordered
-        for iy in range(size(P,0)):
-            P[iy,:]=self.unpermute(P[iy,:],xip)
+        P=self.measureGrid(x,y,xip,profitFunction,threshold,softThreshold)
         # Optionally plot the grid
         if plotFlag:
             plt.imshow(P,extent=[min(x),max(x),max(y),min(y)])
@@ -103,19 +101,17 @@ class _Align(QtCore.QObject):
         return (self.coordinates,finalProfit)
 
 
-    def searchGrid(self,x,y,p0,profitFunction):
+    def searchGrid(self,x,y,p0,profitFunction, I=None):
         """ Use a discrete search algorithm which creates a grid specified by the x,y vectors, starts at a point p0 on the grid,
         then measures the profit at each of the 8 immediately adjacent grid points. If any of these points have a greater profit then
         repeat the process with this maximum point as the new center. Continue until all grid points have been measured once,
         or a local maxima has been found. Return a tuple with (x,y) coordinate of maxmima"""
         # Create empty array for intensity over the grid and boolean array to keep track of which points have been measured
-        I=zeros((len(y),len(x)))
+        if I is None: I=zeros((len(y),len(x)))
         Imask=I!=I
         # Find the x and y indices for the closest point on the grid to p0
-        yMesh,xMesh=meshgrid(y,x)
-        d=(xMesh-p0[0])**2+(yMesh-p0[1])**2
-        iy0=where(d==d.min())[0][0]
-        ix0=where(d==d.min())[1][0]
+        ix0=argmin(abs(x-p0[0]))
+        iy0=argmin(abs(y-p0[1]))
         # Measure profit at this point
         self.moveTo(p0)
         I[iy0,ix0]=profitFunction()
@@ -127,18 +123,20 @@ class _Align(QtCore.QObject):
                     try:
                         if not Imask[iy,ix]:
                             rMax=self.ctrl.GetMaxTravel()
-                            if xMesh[iy,ix]>=0 and yMesh[iy,ix]>=0 and xMesh[iy,ix]<=rMax and yMesh[iy,ix]<=rMax:
-                                self.moveTo((xMesh[iy,ix],yMesh[iy,ix]))
-                                I[iy,ix]=profitFunction()
-                            Imask[iy,ix]=True
+                            if ix >= 0 and iy >= 0 and ix < len(x) and iy < len(y):
+                                if x[ix]>=0 and y[iy]>=0 and x[ix]<=rMax and y[iy]<=rMax:
+                                    self.moveTo((x[ix],y[iy]))
+                                    I[iy,ix]=profitFunction()
+                                Imask[iy,ix]=True
+                            else:
+                                print('Index out of bounds: (%d, %d)'%(ix, iy))
                     except IndexError:
                         # Just ignore any points which are out of bounds
                         pass
             # Find the point with maximum profit on the grid measured so far
             iyMax,ixMax=where(I==I.max())
-            if len(ixMax)>1:
-                ixMax=ixMax[0]
-                iyMax=iyMax[0]
+            ixMax=ixMax[0]
+            iyMax=iyMax[0]
             # If the center of the grid is the maximum then stop the optimization here, otherwise set maximum point as new center
             if I.max() > 0:
                 if iyMax==iy0 and ixMax==ix0:
@@ -151,7 +149,7 @@ class _Align(QtCore.QObject):
                 pass
         # Set maximum point from optimization as new coordinates
         assert ixMax==ix0 and iyMax==iy0
-        return (xMesh[iyMax,ixMax],yMesh[iyMax,ixMax])
+        return (ixMax, iyMax)
    
     def measureLine(self,channel,r,profitFunction,threshold=None):
         """ Given a channel, and a vector of positions, measure the profit function at all points on the given channel. 
@@ -165,15 +163,33 @@ class _Align(QtCore.QObject):
                 return profit
         return profit
 
-    def measureGrid(self,x,y,profitFunction,threshold=None):
+    def measureGrid(self,x,y,xOrder,profitFunction,threshold=None, softThreshold=None):
         """ Measure the profit vs position on a grid specified by x and y vectors and optionally stop if the profit is above a certain threshold"""
         profit=zeros((len(y),len(x)))
-        for ix in range(len(x)):
+        for ix in xOrder:
             if x[ix]>=0 and x[ix]<=self.ctrl.GetMaxTravel():
                 self.move1d(X_CHANNEL,x[ix])
                 profit[:,ix]=self.measureLine(Y_CHANNEL,y,profitFunction,threshold)
-            if threshold!=None and max(profit[:,ix])>=threshold:
+            if not threshold is None and max(profit[:,ix])>=threshold:
                 return profit
+            if not threshold is None and not softThreshold is None and max(profit[:,ix]) >= softThreshold:
+                # If we have a reasonable signal, but not high enough to be sure that it's not a local maxima then attempt an optimization
+                iy = argmax(profit[:, ix])
+                p0 = (x[ix], y[iy])
+                print('Attempting micro-optimization at (%f, %f)...'%p0)
+                ixNew , iyNew = self.searchGrid(x, y, p0, profitFunction)
+                self.moveTo((x[ixNew], y[iyNew]))
+                newProfit = profitFunction()
+                if newProfit >= threshold:
+                    # if we're now at an optimal position then return profit
+                    print('Micro-optimization successful: found signal at (%f, %f)...'%(x[ixNew],y[iyNew]))
+                    profit[iyNew, ixNew] = newProfit
+                    return profit
+                else:
+                    # otherwise go back to previous search position and increase soft threshold
+                    print('Micro-optimization failed')
+                    softThreshold = softThreshold*2
+                    self.moveTo(p0)
         return profit
 
     def move1d(self,channel,r):
@@ -214,13 +230,6 @@ class _Align(QtCore.QObject):
         if len(x)%2:
             xip.append(xi[-1])
         return (x[xip],xip)
-    
-    def unpermute(self,xp,xip):
-        """ Unpermute a vector xp which has been permuted according to the indices xip """
-        x=zeros(len(xp))
-        for i in range(len(xp)):
-            x[xip[i]]=xp[i]
-        return x
 
 
 class PiezoAlign(_Align):

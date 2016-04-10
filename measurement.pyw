@@ -32,47 +32,51 @@ if not NO_VISA:
     # SMU
     from drivepy.keithley.smu import SMU
     # Flags for instrument to use for power meters. Can take values ("Newport", "DMM", "Winspec", None)
-    POWER_METERS={"primary":"Newport","secondary":"Newport","prealign":"Newport","roughAlign":"Newport","fineAlign":"Newport"}
+    POWER_METERS={"primary":"Agilent","secondary":"Agilent","prealign":"Newport","roughAlign":"Agilent","fineAlign":"Agilent"}
        
     """ Import all the instruments which can be used as a power meter"""
     try:
-        # Main Newport power meter
+        # Main Agilent power meter
+        from drivepy.agilent.powermeter import PowerMeter as AgilentPowerMeter
+    except Exception as e:
+        print("Error: Agilent power meter could not be imported")
+    try:
+        # Newport power meter
         from drivepy.newport.powermeter import PowerMeter as NewportPowerMeter
-        from drivepy.newport.powermeter import CommError as NewportPMCommError
     except Exception as e:
         print("Error: Newport power meter could not be imported")
     try:
         # Newfocus power meter via DMM
         from drivepy.newfocus.powermeter import PowerMeter as NewfocusPowerMeter
-        from drivepy.newfocus.powermeter import CommError as NewfocusPMCommError
     except Exception as e:
         print("Error: Newfocus power meter could not be imported")
     try:
         # Winspec used as a power meter
         from winspecanalyzer import WinspecAnalyzer as WinspecPowerMeter
-        from winspec import CommError as WinspecPMCommError
     except Exception as e:
         print("Error: Winspec power meter could not be imported")
 
     def getPowerMeterLib(flag):
         """ Return the intended module for the chosen power meter"""
-        if flag=="Newport": 
-            return (NewportPowerMeter, NewportPMCommError)
+        if flag=="Agilent": 
+            return AgilentPowerMeter
+        elif flag=="Newport": 
+            return NewportPowerMeter
         elif flag=="Newfocus": 
-            return (NewfocusPowerMeter, NewfocusPMCommError)
+            return NewfocusPowerMeter
         elif flag=="Winspec": 
-            return (WinspecPowerMeter, WinspecPMCommError)
+            return WinspecPowerMeter
         else:
             print("Flag " + flag + " not found")
 
-    PrimaryPowerMeter, PrimaryPMCommError = getPowerMeterLib(POWER_METERS["primary"])
-    SecondaryPowerMeter, SecondaryPMCommError = getPowerMeterLib(POWER_METERS["secondary"])
-    PrealignPowerMeter, PrealignPMCommError = getPowerMeterLib(POWER_METERS["prealign"])    # not currently implemented, but want to use when there's a power meter in front of the fiber to limit the search range
-    RoughAlignPowerMeter, RoughAlignPMCommError = getPowerMeterLib(POWER_METERS["roughAlign"])
-    FineAlignPowerMeter, FineAlignPMCommError = getPowerMeterLib(POWER_METERS["fineAlign"])
+    PrimaryPowerMeter = getPowerMeterLib(POWER_METERS["primary"])
+    SecondaryPowerMeter = getPowerMeterLib(POWER_METERS["secondary"])
+    PrealignPowerMeter = getPowerMeterLib(POWER_METERS["prealign"])
+    RoughAlignPowerMeter = getPowerMeterLib(POWER_METERS["roughAlign"])
+    FineAlignPowerMeter = getPowerMeterLib(POWER_METERS["fineAlign"])
 
 
-    from winspecanalyzer import WinspecAnalyzer, getNumberOfPixels, MAX_COUNTS
+    from winspecanalyzer import WinspecAnalyzer, MAX_COUNTS
     from drivepy.anritsu.spectrumanalyzer import SpectrumAnalyzer
     from drivepy.keithley.dmm import DMM
     #from drivepy.advantest.spectrumanalyzer import SpectrumAnalyzer
@@ -100,15 +104,19 @@ ALIGNMENT_TAU_LOWTEMP=500           # Averaging time in ms for power meter measu
 ALIGNMENT_FINE_RES=0.50             # Resolution of search grid for fine alignment in um
 ALIGNMENT_FINE_SPAN=1.0             # Half-span of search grid for fine alignment in um (1=> +/- 1um)
 ALIGNMENT_FINE_CURRENT_DEFAULT=5e-3 # Current to set for the device when using autoalign with fine grid
-ALIGNMENT_ROUGH_RES=0.0025          # Resolution of search grid for rough alignment in mm
-ALIGNMENT_SIGNAL_SEARCH_RES=0.005   # Resolution for signal search in mm
+ALIGNMENT_ROUGH_RES=0.002           # Resolution of search grid for rough alignment in mm
+PRE_ALIGNMENT_ROUGH_RES=0.02        # Resolution of search grid for pre-align optimization in mm
+PRE_ALIGNMENT_SEARCH_RES=0.04       # Resolution for signal search during pre-align in mm
+PREALIGNMENT_SOFT_SEARCH_THRESH = 100e-9
+ALIGNMENT_SIGNAL_SEARCH_RES=0.004   # Resolution for signal search in mm
 ALIGNMENT_SIGNAL_SEARCH_THRESH=1e-6 # Power threshold for detected signal
+ALIGNMENT_SOFT_SEARCH_THRESH=1e-9   # Power threshold before we even attempt optimization during signal search
 FEEDBACK_CALIBRATION_CURRENT=60e-3  # Drive current used when calibrating the feedback amount for RIN
 LIV_TAU=20                          # Averaging time in ms for power meter measurements (normal conditions)
 LIV_TAU_LOWTEMP=500                 # Averaging time in ms for power meter measurements (low temperature conditions)
 LIV_MIN_MAX_POWER=0.5e-6              # The threshold for max(power), below which the measurement is considered unsuccessful
 LOWTEMP_THRESHOLD=295               # Temperature in Kelvin, below which we assume the cryostat is on and use a longer measurement time to average vibration
-SPECTRUM_MIN_CURRENT=0.1e-3         # Currents below this point will be clipped
+SPECTRUM_MIN_CURRENT=0.01e-3         # Currents below this point will be clipped
 MIN_REALIGNMENT_TIME=15             # Minimum time before re-checking the alignment (minutes)
 RIN_MIN_FREQ=500e6                  # Lower cutoff frequency for RIN plotting and noise floor calculation
 AUTO_ALIGN=False
@@ -162,7 +170,7 @@ class Session(QtCore.QObject):
         """ Plots the threshold current vs temperature """
         self.plotProgress.emit(0)
         # choose a default plot type if none was specified
-        if plotType==None:
+        if plotType is None:
             if isinstance(self.activeMeasList[0], LIV): 
                 plotType="ThresholdCurrent"
             elif isinstance(self.activeMeasList[0], RinSpectrum):
@@ -180,7 +188,7 @@ class Session(QtCore.QObject):
             yAll=[]
             legendStrings=[]
             # Extract the LIV data for each group and get plot data vs. temperature
-            for group in (tree if groupName==None else [groupName,]):
+            for group in (tree if groupName is None else [groupName,]):
                 #if tree[group].has_key("LIV") and group in ['QD Laser Unit 5097','QD Laser Unit 5098','QD Laser Unit 5781','QD Laser Unit 5782']:
                 if tree[group].has_key("LIV"):
                     #livMeas=self.getEnabled(self.sortByTemperature(tree[group]["LIV"]))
@@ -201,7 +209,7 @@ class Session(QtCore.QObject):
             yAll=[]
             legendStrings=[]
             # Extract the lasing wavelength data for each group and get plot data vs. temperature
-            for group in (tree if groupName==None else [groupName,]):
+            for group in (tree if groupName is None else [groupName,]):
                 if tree[group].has_key("WinspecGainSpectrum") and group in ['QD Laser Unit 5097','QD Laser Unit 5098','QD Laser Unit 5781','QD Laser Unit 5782']:
                     specMeas=self.getEnabled(self.sortByTemperature(tree[group]["WinspecGainSpectrum"]))
                     x=array([mean(m.data["temperature"]) for m in specMeas])
@@ -361,7 +369,7 @@ class Session(QtCore.QObject):
         parentFromGroupType = {}
         parentFromGroupTypeName = {}
         # Get the list of all the measurement objects in the current session
-        allMeasurements=self.measurements if measObject==None else [measObject]
+        allMeasurements=self.measurements if measObject is None else [measObject]
         # From the top to the bottom of the tree, create QTreeWidgetItems and fill the dictionary with parent info
         for meas in allMeasurements:
             # Get the top level characteristics from the object
@@ -447,7 +455,7 @@ class Session(QtCore.QObject):
 
     def dataByMeasType(self,measType,measList=None):
         """ Return all active measurements matching measType """
-        if measList==None: measList=self.measurements
+        if measList is None: measList=self.measurements
         outList=[]
         for m in measList:
             if m.info["type"]==measType and m.info["enabled"]:
@@ -541,6 +549,7 @@ class Measurement(QtCore.QObject):
         self.cryostatOff=False
         self.lock=lock
         # Do rough align if specified
+        self.preAlignFlag=self.info.get("preAlign",True)
         self.roughAlignFlag=self.info.get("roughAlign",False)
         self.fineAlignFlag=self.info.get("fineAlign",False)
         # Set filter wheel position to 1
@@ -579,40 +588,77 @@ class Measurement(QtCore.QObject):
     def getID(self):
         """ Returns a human intelligible unique ID for usage in the database"""
         return self.info["Name"]+" "+self.info["creationTime"]
+        
+       
+    def roughAlign(self, preAlign = True):
+        smu = self._setAlignmentCurrent()
+        pm = RoughAlignPowerMeter()
+        motorAlignObject=MotorAlign()
+        if preAlign:
+            # If the rough align power meter is below the search threshold then use a pre-align to get the interesting search range
+            if pm.readPowerAuto(mode='max') < ALIGNMENT_SIGNAL_SEARCH_THRESH: 
+                xm, xM, ym, yM = self._preAlign(motorAlignObject)
+                span = max((xM - xm)/2, (yM - ym)/2)
+            else:
+                span = None
+        self.sendStatusMessage("\nMain align (rough):\n")
+        self._roughAlign(motorAlignObject, pm, ALIGNMENT_SIGNAL_SEARCH_RES, ALIGNMENT_ROUGH_RES, ALIGNMENT_SIGNAL_SEARCH_THRESH, ALIGNMENT_SOFT_SEARCH_THRESH, span = span)
 
-    def roughAlign(self):
+    def _setAlignmentCurrent(self):
+        smu = SMU()
+        smu.setCurrent(ALIGNMENT_CURRENT)
+        smu.setOutputState("ON")
+        return smu    
+        
+    def _preAlign(self, motorAlignObject):
+        """ If there is a power meter in front of the fiber / spatial filter and we don't have first light yet,
+        a pre-align should be done to figure out the range that we should search over """
+        def scan(chan, sign):
+            # Move in steps of 50um away from pre-align peak to find valid scan range
+            pos = p[chan]
+            motorAlignObject.moveTo(p)
+            while pm.readPowerAuto() > preAlignPower*0.75:
+                pos += sign*PRE_ALIGNMENT_SEARCH_RES
+                motorAlignObject.move1d(chan, pos)
+            return pos        
+        self.sendStatusMessage("Prealign:\n")
+        pm = PrealignPowerMeter()
+        p, preAlignPower = self._roughAlign(motorAlignObject, pm, PRE_ALIGNMENT_SEARCH_RES, PRE_ALIGNMENT_ROUGH_RES, ALIGNMENT_SIGNAL_SEARCH_THRESH, PREALIGNMENT_SOFT_SEARCH_THRESH)
+        self.sendStatusMessage("Pre align power meter measured %f uW"%(preAlignPower*1e6))
+        limits = (scan(0, -1), scan(0, 1), scan(1, -1), scan(1, 1))
+        self.sendStatusMessage("Pre align determined scan range: x: (%f, %f) y: (%f, %f)"%limits)
+        return limits
+
+    def _roughAlign(self, motorAlignObject, pm, searchRes, res, threshold, softThreshold = None, span = None):
         """ Run findFirstSignal() and then do a rough align """
         self.sendStatusMessage("Initializing motor controller...")
-        motorAlignObject=MotorAlign()
         # Search for the first sign of signal over wide coarse grid using motor controller
         self.sendStatusMessage("Searching for the signal...")
-        smu=SMU()
-        smu.setCurrent(ALIGNMENT_CURRENT)                    
         p0=self.main.motorCoordinates
-        pm=RoughAlignPowerMeter()
         profitFunc=lambda : pm.readPowerAuto(tau=1,mode="max")
-        p,power=motorAlignObject.findFirstSignal(p0,res=ALIGNMENT_SIGNAL_SEARCH_RES,profitFunction=profitFunc,threshold=ALIGNMENT_SIGNAL_SEARCH_THRESH)
+        p,power=motorAlignObject.findFirstSignal(p0,res=searchRes,profitFunction=profitFunc,threshold=threshold, span = span, softThreshold = softThreshold)
         with QReadLocker(self.lock):
             self.main.motorCoordinates=p
         # Rough align to get the rough optimum position over wide but coarse grid
-        self.sendStatusMessage("Signal found at "+"(%.3f,%.3f)"%p+"mm. Now performing rough alignment...")
+        self.sendStatusMessage("Signal found at "+"(%.3f,%.3f)"%p+"mm.\nNow performing rough alignment...")
         tau=ALIGNMENT_TAU if self.cryostatOff else ALIGNMENT_TAU_LOWTEMP
         p0=p
         profitFunc=lambda : pm.readPowerAuto(tau=tau)
-        p,power=motorAlignObject.autoalign(p0,res=ALIGNMENT_ROUGH_RES,profitFunction=profitFunc)
+        p,power=motorAlignObject.autoalign(p0,res=res,profitFunction=profitFunc)
         with QReadLocker(self.lock):
             self.main.motorCoordinates=p
         settings=QtCore.QSettings()
         settings.setValue("MotorCoordinates",p)
         self.sendStatusMessage("Rough alignment completed with peak at "+"(%.3f,%.3f)"%p+"mm.")
+        return p, power
 
     def fineAlign(self, piezoAlignObject = None, smu = None):
         """ Perform a fine alignment using the piezoelectric actuators, and only the power as the optimization conditions"""
         self.sendStatusMessage("Doing fine align with power meter and piezo actuators...")
         alignmentCurrent=self.info.get("fineAlignCurrent",ALIGNMENT_CURRENT)
-        if smu == None: smu = SMU()
-        if piezoAlignObject == None:
-            if self.piezoAlignObject == None:
+        if smu is None: smu = SMU()
+        if piezoAlignObject is None:
+            if self.piezoAlignObject is None:
                 piezoAlignObject=PiezoAlign()
             else:
                 piezoAlignObject = self.piezoAlignObject
@@ -630,7 +676,7 @@ class Measurement(QtCore.QObject):
     def initTempController(self):
         """ Initializes the temperature controller. """
         # NEED TO ACCESS THE TEMPERATURE THROUGH THE SAME INTERFACE AS THE TEMPERATURE WIDGET!!!
-        if self.main.tempController!=None:
+        if not self.main.tempController is None:
             self.tempController=self.main.tempController
         else:
             try:
@@ -682,7 +728,7 @@ class Measurement(QtCore.QObject):
             return data
         if type(data)==string_:
             return str(data)
-        if data==None:
+        if data is None:
             return "N/A"
         elif type(data)==int:
              return str(data)
@@ -785,7 +831,7 @@ class LIV(Measurement):
             if self.roughAlignFlag:
                 self.sendStatusMessage("Initializing piezo controller to center for rough align...")
                 piezoAlignObject=PiezoAlign()
-                self.roughAlign()
+                self.roughAlign(self.preAlignFlag)
             self.initTempController()
             n=self.info["numCurrPoints"]
             #self.iSet=around(linspace(self.info["Istart"],self.info["Istop"],n),5)
@@ -814,8 +860,8 @@ class LIV(Measurement):
                 sleep(20e-3) # 20ms wait to account for 1kHz analog filter on power meter + digital filter(10 samples)
                 try:
                     tau=LIV_TAU if self.cryostatOff else LIV_TAU_LOWTEMP
-                    powerMeas=pm.readPowerAuto(tau)
-                except pmCommError as e:                
+                    powerMeas=pm.readPowerAuto(tau=tau)
+                except Exception as e:                
                     QtGui.QMessageBox.warning(None,"CommError",("There was a persistent problem with the power meter:\n %1").arg(e.args[0]))
                     self.aborted.emit()
                     return
@@ -888,7 +934,7 @@ class LIV(Measurement):
 
     def getFitParameters(self,recalculate=True):
         """ returns the fit parameters, calculating if necessary """
-        if recalculate or self.fitParameters==None:
+        if recalculate or self.fitParameters is None:
             self.fitCurrent()
         return self.fitParameters
 
@@ -990,7 +1036,7 @@ class Spectrum(Measurement):
             if self.roughAlignFlag or self.fineAlignFlag:
                 self.sendStatusMessage("Initializing piezo controller to center for rough align...")
                 self.piezoAlignObject=PiezoAlign()
-                self.roughAlign()
+                self.roughAlign(self.preAlignFlag)
             else:
                 self.piezoAlignObject=None
             self.initTempController()
@@ -1065,14 +1111,15 @@ class Spectrum(Measurement):
                         raise
                     self.sendStatusMessage("Finished acquiring data for spectrum "+str(self.currentIndex+1)+"/"+str(size(self.iSet)))
                     self.plot(i)
+            except IOError, e:
+                QtGui.QMessageBox.warning(None,"VisaIOError",("There was an instrument communication error. Please check all the instruments are connected properly:\n %1").arg(e.args[0]))
+            finally:
                 # remove the smu so that it returns to user control
-                del self.smu, self.osa, self.piezoAlignObject
                 try: 
                     del self.dmm
                 except Exception as e:
                     pass
-            except IOError, e:
-                QtGui.QMessageBox.warning(None,"VisaIOError",("There was an instrument communication error. Please check all the instruments are connected properly:\n %1").arg(e.args[0]))
+                del self.smu, self.osa, self.piezoAlignObject
         else:
             nCurr=self.info["numCurrPoints"]
             self.acquireDummyData()
@@ -1175,7 +1222,7 @@ class Spectrum(Measurement):
        logscale=False -> flag whether to allow spectrum power to be plotted on log-scale
        """
         # Get the plot index from self.main (note: this is just a hack because I can't seem to get it through the started signal of the QThread
-        if index==None:
+        if index is None:
             try:
                 index=self.main.currentPlotIndex
             except AttributeError as e:
@@ -1209,11 +1256,11 @@ class Spectrum(Measurement):
                 else:
                     y=y*1e12
                     ylabel="Optical power (pW)"
-            if title==None: title="Optical power vs wavelength spectrum: I = " + "{:0.2f}".format(iMeas[0]*1000) +"mA"
+            if title is None: title="Optical power vs wavelength spectrum: I = " + "{:0.2f}".format(iMeas[0]*1000) +"mA"
             # Add the plot data to the dictionary
             if xAxisUnit=="energy":
                 E0=self.lambdaToE(x0)*1000
-                xAxis={"data":(self.lambdaToE(x)*1000,),"label":"Photon energy [meV]"}
+                xAxis={"data":(self.lambdaToE(x)*1000,),"label":"Emission energy [meV]"}
                 if xLim!=None: xAxis["limit"]=(E0-xLim[0],E0+xLim[1])
             else:
                 xAxis={"data":((x-x0)*1e9,),"label":(str(x0*1e6)+ "um wavelength offset [nm]")}
@@ -1248,7 +1295,7 @@ class Spectrum(Measurement):
             x0=self.info["Center"]
             if xAxisUnit=="energy":
                 E0=self.lambdaToE(x0)*1000
-                xAxis={"data":tuple([self.lambdaToE(xi)*1000 for xi in x]),"label":"photon energy [meV]"}
+                xAxis={"data":tuple([self.lambdaToE(xi)*1000 for xi in x]),"label":"Emission energy [meV]"}
                 if xLim!=None: xAxis["limit"]=(E0-xLim[0],E0+xLim[1])
             else:
                 # scale / shift data
@@ -1260,7 +1307,7 @@ class Spectrum(Measurement):
             yAxis={"data":tuple(y),"label":ylabel,"legend":legend,"lineProp":lineProp}
             if pLim!=None: yAxis["limit"]=pLim
             # Include temperature in title if it's included
-            if title==None:
+            if title is None:
                 title=r"Lasing spectral intensity vs wavelength"
                 if T!=None:
                     title+=" @ {:0.1f}".format(T) +"K"
@@ -1392,6 +1439,12 @@ class WinspecSpectrum(Spectrum):
         osa.setResolution(self.info["Resolution"]*1e9)
         osa.setCenter(self.info["Center"]*1e9)
         osa.setNumPoints(self.info["numLambdaPoints"])
+        if osa.has2dDetector(): osa.autoSetROI()
+        if self.info["optimizeCenter"]:
+            self.smu.setCurrent(self.iSet[-1],self.info["Vcomp"])
+            newCenter = osa.measureOptimalCenter()
+            osa.setCenter(newCenter)
+            self.info["Center"], self.info["CenterSet"] = newCenter*1e-9, self.info["Center"]
         return osa
 
     def acquireData(self,canvas=None,dummy=False):
@@ -1414,9 +1467,9 @@ class WinspecSpectrum(Spectrum):
             tau=ALIGNMENT_TAU if self.cryostatOff else ALIGNMENT_TAU_LOWTEMP
             pm=SecondaryPowerMeter()
             self.smu.setOutputState("OFF")
-            bg=pm.readPowerAuto(tau)
+            bg=pm.readPowerAuto(tau=tau)
             self.smu.setOutputState("ON")
-            totalInputPower=max(pm.readPowerAuto(tau)-bg,1e-12)
+            totalInputPower=max(pm.readPowerAuto(tau=tau)-bg,1e-12)
         # Specify the filename for the raw data
         self.osa.setDataFilename(str(self.iSet[self.currentIndex]*1e3).replace(".","p")+"mA")
         self.sendStatusMessage("Acquiring data for spectrum "+str(self.currentIndex+1)+"/"+str(size(self.iSet))+" starting with rangeIndex = " + str(osa.rangeIndex))
@@ -1428,27 +1481,7 @@ class WinspecSpectrum(Spectrum):
         # return the data output
         # TODO: Do something more useful with info instead of discarding it here
         self.data["wavelength"][:,idx]=wavelength
-        self.data["intensity"][:,idx]=intensity
-
-    def acquireSpectrumSafe(self,numFrames=1,exposureTime=None,maxMeasReps=3):
-        """ Get the measurement data from Winspec, and repeat up to maxMeasNum if there was an error before giving up """
-        measNum=1
-        # If there was a problem measuring, try again up to maxMeasReps times, printing warning if it still doesn't work
-        while True:
-            try:
-                wavelengthData,counts,outDict=self.osa.acquireSpectrum(numFrames,exposureTime)
-                break
-            except Exception as e:
-                if measNum <= maxMeasReps:
-                    self.sendStatusMessage("Exception occured measuring Winspec spectrum... remeasurement attempt # "+str(measNum))
-                else:
-                    self.sendStatusMessage("Remeasurement of Winspec spectrum was not successful.... \n "+e.args[0])
-                    raise
-                measNum+=1
-        if measNum > 1:
-            self.sendStatusMessage("Remeasurement of Winspec spectrum successful")
-        return (wavelengthData,counts,outDict)
-    
+        self.data["intensity"][:,idx]=intensity   
 
     def estimateCPS(self,inputPower,gain):
         """ Helper function which estimates what the CPS at the detector should be given the inputPower """
@@ -1489,15 +1522,6 @@ class WinspecSpectrum(Spectrum):
     def derivativeSum(self,signal):
         """ A metric for estimating if the signal looks like noise """
         return sum(diff(signal))/sum(signal)
-
-    
-    def optimalAccums(self,exposureTime,disableFlag=False):
-        """ calculates the minimum number of accumulations necessary to keep the total measurement time within minTime and maxTime """
-        # round numAcq up to the number which makes meas time exceed minMeasTime
-        if disableFlag:
-            return 1
-        else:
-            return int(ceil(WINSPEC_MIN_MEAS_TIME/exposureTime))
 
     def timeToStr(self,t):
         """ make a nicely formatted string from a time in seconds """
@@ -1672,7 +1696,7 @@ class WinspecGainSpectrum(WinspecSpectrum):
         if self.laserParam!=None:
             alpham=1/2/self.laserParam["L"]*log(1/self.laserParam["R1"]/self.laserParam["R2"])
         # Get the plot index from self.main (note: this is just a hack because I can't seem to get it through the started signal of the QThread
-        if index==None:
+        if index is None:
             try:
                 index=self.main.currentPlotIndex
             except AttributeError as e:
@@ -1689,7 +1713,7 @@ class WinspecGainSpectrum(WinspecSpectrum):
             x=self.data["wavelength"]
             y=self.data["intensity"]
             iMeas=self.data["iMeas"]
-            T=min(self.data["temperature"]) if self.data["temperature"]!=None else None
+            T=None if self.data["temperature"] is None else min(self.data["temperature"])
         # Get the threshold current if it was specified
         thresholdCurrent=self.info.get("thresholdCurrent",None)
         # Prepare plot for case of single spectrum
@@ -1708,16 +1732,16 @@ class WinspecGainSpectrum(WinspecSpectrum):
                 else:
                     y=y*1e12
                     ylabel="Optical power (pW)"
-            if title==None: 
+            if title is None: 
                 title="["+self.info["groupName"]+"] "
-                if thresholdCurrent==None:
+                if thresholdCurrent is None:
                     title="Optical power and gain vs wavelength spectrum: I = " + "{:0.2f}".format(iMeas[0]*1000) +"mA"
                 else:
                     title="Optical power and gain vs wavelength spectrum: I = " + "{:0.2f}".format(iMeas[0]*1000) +"mA ("+"{:0.2f}".format(iMeas[0]/thresholdCurrent)+" $I_{th}$)"
             # Add the plot data to the dictionary
             if xAxisUnit=="energy":
                 E0=self.lambdaToE(x0)*1000
-                xAxis={"data":(self.lambdaToE(x)*1000,),"label":"Photon energy [meV]"}
+                xAxis={"data":(self.lambdaToE(x)*1000,),"label":"Emission energy [meV]"}
                 if xLim!=None: xAxis["limit"]=(E0+xLim[0],E0+xLim[1])
             else:
                 xAxis={"data":((x-x0)*1e9,),"label":(str(x0*1e6)+ "um wavelength offset [nm]")}
@@ -1749,7 +1773,7 @@ class WinspecGainSpectrum(WinspecSpectrum):
             x=[x[i] for i in order]
             y=[y[i] for i in order]
             lineProp=["o" for i in self.data["iMeas"]]
-            if thresholdCurrent==None:
+            if thresholdCurrent is None:
                 legend=["{:0.2f}".format(i*1000)+"mA" for i in iMeas]
             else:
                 legend=["{:0.2f}".format(i/thresholdCurrent)+"$I_{th}$" for i in iMeas]
@@ -1764,7 +1788,7 @@ class WinspecGainSpectrum(WinspecSpectrum):
             x0=self.info["Center"]
             if xAxisUnit=="energy":
                 E0=self.lambdaToE(x0)*1000
-                xAxis={"data":tuple([self.lambdaToE(xi)*1000 for xi in x]),"label":"photon energy [meV]"}
+                xAxis={"data":tuple([self.lambdaToE(xi)*1000 for xi in x]),"label":"Emission energy [meV]"}
                 if xLim!=None: xAxis["limit"]=(E0+xLim[0],E0+xLim[1])
             else:
                 # scale / shift data
@@ -1776,7 +1800,7 @@ class WinspecGainSpectrum(WinspecSpectrum):
             yAxis={"data":tuple(y),"label":r"Net modal gain [cm$^{-1}$]","legend":legend,"lineProp":lineProp}
             if gLim!=None: yAxis["limit"]=gLim
             # Include temperature in title if it's included
-            if title==None:
+            if title is None:
                 title="["+self.info["groupName"]+"] "
                 if T!=None:
                     title+=r"Net modal gain ($\Gamma g - \alpha_i$) vs wavelength spectrum" + " @ {:0.1f}".format(T) +"K"
@@ -1794,7 +1818,7 @@ class WinspecGainSpectrum(WinspecSpectrum):
     def curveFit(self,index=None):
         """ Return a function handle for gain spectrum from curve fit """
         # I'd like to move the plotting of the gain spectrum itself into this method so that I don't need to assume any arbitrary parameters
-        index=range(size(self.data["wavelength"],1)) if index==None else array([index])
+        index=range(size(self.data["wavelength"],1)) if index is None else array([index])
         xdata=[]
         ydata=[]
         iMeas=self.data["iMeas"]
@@ -1843,7 +1867,7 @@ class WinspecGainSpectrum(WinspecSpectrum):
         #y=[(ydata[0]+alphaI)/Gamma]
         #x=[x[0]]
         # END DEBUG ONLY
-        xAxis={"data":tuple(x),"label":"photon energy [meV]","limit":((E0-50,E0+50) if xRange==None else [xi*1000 for xi in xRange])}
+        xAxis={"data":tuple(x),"label":"Emission energy [meV]","limit":((E0-50,E0+50) if xRange is None else [xi*1000 for xi in xRange])}
         #yAxis={"data":tuple(y),"label":r"Net modal gain [cm$^{-1}$]","limit":(-80,20)} #"legend":legend,"lineProp":lineProp,
         yAxis={"data":tuple(y),"label":r"Net modal gain [cm$^{-1}$]","limit":(-80,20),"legend":legend,"lineProp":lineProp}
         title=r"Net modal gain ($\Gamma g - \alpha_i$) vs wavelength spectrum" + " @ {:0.1f}".format(T) +"K" + " optimization parameters: " + str(param)
@@ -2003,7 +2027,7 @@ class RinSpectrum(Spectrum):
             lineProp=["x-" for i in self.data["iMeas"]]
             legend=["{:0.0f}".format(iMeas[i]*1000)+"mA" for i in range(len(iMeas))]
             yAxis={"data":tuple(y),"label":"Relative Intensity Noise (dB/Hz)","legend":legend,"lineProp":lineProp}
-            if title==None:
+            if title is None:
                 title=r"RIN vs frequency and current"
         else:
             if (not highResMode or not "freqHighRes" in self.data):
@@ -2016,7 +2040,7 @@ class RinSpectrum(Spectrum):
                 y=(self.powerDensityToRin(self.data["powerHighRes"][startIdx:,index],self.data["thermalNoisePowerHighRes"][startIdx:],self.data["photoCurrent"][index]),)
             #iMeas=[self.data["iMeas"][index]]
             yAxis={"data":tuple(y),"label":"Relative Intensity Noise (dB/Hz)"}
-            if title==None:
+            if title is None:
                 title=r"RIN vs frequency @ " + str(self.data["iMeas"][index]*1000) + "mA"
         xAxis={"data":tuple(x),"label":"frequency [GHz]"}
         # Include temperature in title if it's included

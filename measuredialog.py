@@ -1,6 +1,12 @@
-from __future__ import division
+﻿from __future__ import division
 from PyQt4 import QtGui,QtCore
-from winspecanalyzer import getNumberOfPixels, getPixelResolutions
+try:
+    from winspec import readDetectorDefinition
+    detector=readDetectorDefinition()
+    WINSPEC_AVAILABLE = True
+except Exception as e:
+    WINSPEC_AVAILABLE = False
+    print("Could not load Winspec library. Ensure that Winspec is installed and that you have run the detector calibration from the File menu\n"+str(e.args[0]))
 
 class MeasureDialog(QtGui.QDialog):
     """ Dialog shown to the user when they call the measure action """
@@ -15,7 +21,8 @@ class MeasureDialog(QtGui.QDialog):
         # Load all the group names from the session object
         self.allGroupNames=parent.session.getGroupNames()
         # Build a widget for each test type containing all of the controls required to set the parameters of the test
-        self.allTestWidgets=[livWidget(),osaSpectrumWidget(),winspecSpectrumWidget(),winspecGainSpectrumWidget(),ManualWinspecSpectrumWidget(), RinSpectrumWidget()]
+        self.allTestWidgets=[livWidget(),osaSpectrumWidget(), RinSpectrumWidget()]
+        if WINSPEC_AVAILABLE: self.allTestWidgets.extend([winspecSpectrumWidget(),winspecGainSpectrumWidget(),ManualWinspecSpectrumWidget()])
         # Build a widget for the test setup at the top of the dialog and the button boxes down the bottom
         testSetupWidget=self.buildTestSetupWidget()
         buttonBoxWidget=self.buildButtonBoxWidget()
@@ -131,9 +138,9 @@ class MeasureDialog(QtGui.QDialog):
         # Save size/pos and all widget settings which contain useful data
         settings.setValue("MeasurementDialog/Size",(self.size()))
         settings.setValue("MeasurementDialog/Position",(self.pos()))        
-        settings.setValue("testName",(self.testNameText.text()))
-        settings.setValue("groupName",(self.groupNameCombo.currentText()))
-        settings.setValue("testIndex",(self.testSelector.currentIndex()))
+        settings.setValue("MeasurementDialog/testName",(self.testNameText.text()))
+        settings.setValue("MeasurementDialog/groupName",(self.groupNameCombo.currentText()))
+        settings.setValue("MeasurementDialog/testIndex",(self.testSelector.currentIndex()))
         testWidget=self.allTestWidgets[self.testSelector.currentIndex()]
         testWidget.saveSettings()
 
@@ -143,10 +150,9 @@ class MeasureDialog(QtGui.QDialog):
         settingsDict={}
         settingsDict["size"]=s.value("MeasurementDialog/Size")
         settingsDict["pos"]=s.value("MeasurementDialog/Position")
-        # Should probably add MeasurementDialog/... to these
-        settingsDict["testIndex"]=s.value("testIndex",(0))
-        settingsDict["groupName"]=s.value("groupName",("Unit 1"))
-        settingsDict["testName"]=s.value("testName",("25"+u'\u00B0'+"C"))
+        settingsDict["testIndex"]=s.value("MeasurementDialog/testIndex",(0))
+        settingsDict["groupName"]=s.value("MeasurementDialog/groupName",("Unit 1"))
+        settingsDict["testName"]=s.value("MeasurementDialog/testName",("300K"))
         return settingsDict
             
     def closeEvent(self,event):
@@ -367,7 +373,7 @@ class winspecSpectrumWidget(spectrumWidget):
         # Link the class which will hold the measurement data
         from measurement import WinspecSpectrum
         self.measurementClass=WinspecSpectrum
-        self.build()        
+        self.build()
 
     def build(self):
         """ Build the widget holding the controls for a spectrum measurements with the OSA """
@@ -393,12 +399,12 @@ class winspecSpectrumWidget(spectrumWidget):
         self.fineAlignCheckbox=QtGui.QCheckBox("Fine Alignment")
         self.fineAlignCheckbox.setCheckState(settings["fineAlign"])
         # Allow up to 15 spectra to be glued together (must be odd number so that center isn't a transition)
-        numPointsStr=[str(x*getNumberOfPixels()) for x in range(1,16,2)]
+        numPointsStr=[str(x*detector["width"]) for x in range(1,16,2)]
         self.specNumLambdaCombo.addItems(numPointsStr)
         self.specNumLambdaCombo.setCurrentIndex(settings["numLambdaIndex"])
         specResLabel=QtGui.QLabel("Resolution (nm)")
         self.specResCombo=QtGui.QComboBox()
-        resolutions=getPixelResolutions()
+        resolutions=detector["resolution"]
         self.specResCombo.addItems([str(num) for num in resolutions])
         self.specResCombo.setCurrentIndex(settings["resolutionIndex"])
         specSpanLabel=QtGui.QLabel("Span (nm)")
@@ -448,6 +454,7 @@ class winspecSpectrumWidget(spectrumWidget):
         testParameters["Span"]=float(self.specSpanText.text())/1e9 #nm
         testParameters["roughAlign"]=self.roughAlignCheckbox.isChecked()
         testParameters["fineAlign"]=self.fineAlignCheckbox.isChecked()
+        testParameters["optimizeCenter"] = False     # TODO: Make a checkbox for this setting
         return testParameters   
     def saveSettings(self):
         # Save current values to QSettings

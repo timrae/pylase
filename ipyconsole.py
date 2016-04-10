@@ -1,6 +1,6 @@
-import IPython, sys
-from IPython.qt.console.rich_ipython_widget import RichIPythonWidget
-from IPython.qt.inprocess import QtInProcessKernelManager
+﻿import IPython, sys
+from qtconsole.rich_ipython_widget import RichIPythonWidget
+from qtconsole.inprocess import QtInProcessKernelManager
 from IPython.lib import guisupport
 
 class QIPythonWidget(RichIPythonWidget):

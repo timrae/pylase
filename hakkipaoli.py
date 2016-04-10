@@ -1,4 +1,4 @@
-from __future__ import division
+﻿from __future__ import division
 from PyQt4 import QtCore
 from numpy import *
 from scipy import optimize
@@ -13,7 +13,8 @@ CONVOLVE=False # Whether to convolve the fit function with the response function
 MINSMOOTH=None # use 5 sample smoothing in calculating the minimum. Set to None to disable
 MIN_MODE_INTENSITY=20/65536    # Minimum difference in counts between max and min value of a mode to be recognized as legit
 #DEFAULT_PARAM={"R1":.997,"R2":.322,"L":375e-6,"n":3.619}
-DEFAULT_PARAM={"R1":.94,"R2":.3,"L":600e-6,"n":3.619}
+#DEFAULT_PARAM={"R1":.94,"R2":.3,"L":600e-6,"n":3.619}
+DEFAULT_PARAM={"R1":.94,"R2":.3,"L":375e-6,"n":3.619}
 MIN_MODE_SPACING=0.4e-9*(375e-6/DEFAULT_PARAM["L"])         # Minimum spacing in nm between each mode used for peakClean algorithm
 
 class HakkiPaoli(QtCore.QObject):

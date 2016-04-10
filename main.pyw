@@ -10,7 +10,7 @@ import qrc_resources
 from PyQt4 import QtGui, QtCore, QtCore
 from PyQt4.QtCore import Qt, QCoreApplication
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavigationToolbar
+from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 from matplotlib.pyplot import legend
 from measuredialog import MeasureDialog
@@ -30,6 +30,12 @@ except WindowsError as e:
 # Assume that if VISA module not installed then none of the instrumentation imports will work
     print("Error importing visaconnection from drivepy... \n"+e.args[1])
     DUMMY_MODE=True
+
+try:
+    from winspec import Winspec, readDetectorDefinition
+    WINSPEC_AVAILABLE = True
+except ImportError:
+    WINSPEC_AVAILABLE = False
 
 # Flag to switch on autoalign. Turn off if no piezo actuators or fiber tap + power meter available
 AUTO_ALIGN=True
@@ -114,6 +120,7 @@ class MainWindow(QtGui.QMainWindow):
         alignAction=self.createAction("&Alignment",self.autoAlign,"Ctrl+A","xy_motor","Align the objective lens to get maximum signal (via motors)")
         fineAlignAction=self.createAction("Fine Alignment",self.autoFineAlign,"Ctrl+Shift+A","xy_piezo","Align the objective lens to get maximum signal (via piezo)")
         profileAction=self.createAction("&Profile",self.startTemperatureProfile,"Ctrl+P","cooler","Start a fixed measurement vs. temperature profile")
+        winspecCalibrationAction=self.createAction("&Winspec Calibration",self.winspecCalibration,"Ctrl+W","Measure Winspec Calibration data")
         self.consoleDialog=None
         # Create a toolbar and add actions/widgets to it
         self.mainToolBar=mainToolBar=QtGui.QToolBar()
@@ -138,8 +145,11 @@ class MainWindow(QtGui.QMainWindow):
         self.fileMenu.addAction(measureAction)
         self.fileMenu.addAction(exportAction)
         self.fileMenu.addAction(quitAction)
+        if WINSPEC_AVAILABLE:
+            self.fileMenu.addAction(winspecCalibrationAction)
         self.menuBar().addMenu(self.fileMenu)
         # Show temperature monitor dock widget
+        self.tempController = None
         if not DUMMY_MODE:
             try:
                 # Show any delayed errors from import 
@@ -258,6 +268,15 @@ class MainWindow(QtGui.QMainWindow):
         profile.profileError.connect(self.profileError)
         self.canvas.readyToDraw.connect(profile.readyToDraw)
         profile.run()
+
+    def winspecCalibration(self):
+        """ Measure the Winspec calibration data necessary to capture a Winspec spectrum """
+        try:
+            readDetectorDefinition()
+            w = Winspec()
+            w.measureCalibration()
+        except IOError:
+            w = Winspec()
 
     def profileError(self,message=None):
         """ called from the profile object when it recognizes that there was a measurement error """
@@ -689,10 +708,11 @@ class MplCanvas(FigureCanvas):
             self.axes.set_title(dic["title"])
         # Plot the data for first axis
         for idx in range(len(dic["y"]["data"])):
-            if "lineProp" in dic["y"]:
-                self.axes.plot(dic["x"]["data"][idx],dic["y"]["data"][idx],dic["y"]["lineProp"][idx])
-            else:
-                self.axes.plot(dic["x"]["data"][idx],dic["y"]["data"][idx])
+            if not dic["x"]["data"][idx] is None and not dic["y"]["data"][idx] is None:
+                if "lineProp" in dic["y"]:
+                    self.axes.plot(dic["x"]["data"][idx],dic["y"]["data"][idx],dic["y"]["lineProp"][idx])
+                else:
+                    self.axes.plot(dic["x"]["data"][idx],dic["y"]["data"][idx])
         self.axes.set_xlabel(dic["x"]["label"])
         self.axes.set_ylabel(dic["y"]["label"])
         self.axes.grid("on")

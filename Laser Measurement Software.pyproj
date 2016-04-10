@@ -5,7 +5,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>c7707456-602d-4d76-8643-9b0892429e7e</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>gainmedium.py</StartupFile>
+    <StartupFile>main.pyw</StartupFile>
     <SearchPath>C:\Users\Tim\Python Modules</SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
