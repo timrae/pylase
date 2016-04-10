@@ -1,4 +1,5 @@
-﻿from __future__ import division
+﻿#!/usr/bin/env
+from __future__ import division
 import os, sip
 os.environ['QT_API'] = 'pyqt'
 sip.setapi("QString", 2)

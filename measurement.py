@@ -25,7 +25,7 @@ from PyQt4 import QtGui,QtCore
 try:
     from drivepy import visaconnection
     NO_VISA=False
-except (ImportError, WindowsError) as e:
+except (ImportError, OSError) as e:
     NO_VISA=True
 # Import the rest of the instruments if visa library exists, otherwise don't bother since no real tests can be done without this library
 if not NO_VISA:
