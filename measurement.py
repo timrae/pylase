@@ -938,52 +938,55 @@ class LIV(Measurement):
             self.fitCurrent()
         return self.fitParameters
 
-    def getThresholdCurrent(self,maxLight=1e-6,INTERPOLATE=True):
-    #def getThresholdCurrent(self,maxLight=5e-3,INTERPOLATE=True):
+    def getThresholdCurrent(self,maxLight=.05,INTERPOLATE=True):
         """ Smooth data and take the peak of the second derivative as the threshold current.
         First trim the data to the range below where lMeas first goes abive maxLight. The noise floor of Newport detector is 20uW, so 200uW is reasonable starting point."""
         x=self.data["iMeas"]
         y=self.data["lMeas"]
         # Calculate the second derivative from a Savitky-Golay filter
-        if y.max() < (y.min() + maxLight):
-            maxLight=6e-10
         window=round(len(x)/8)
         window=window-1 if window%2 else window # window must be odd number
-        yprime=savitzky_golay(y,31,4,1) # first derivative from smoothed data
+        #yprime=savitzky_golay(y,31,4,1) # first derivative from smoothed data
         yprime2=savitzky_golay(y,31,4,2) # second derivative from smoothed data
         if size(yprime2)>size(y):
             # This seems to happen when the length of y is too small!
             raise Exception
         if INTERPOLATE:
             p=interpolate.interp1d(x,y,'cubic')
-            pp=interpolate.interp1d(x,yprime,'cubic')
+            #pp=interpolate.interp1d(x,yprime,'cubic')
             ppp=interpolate.interp1d(x,yprime2,'cubic')
             # Get the interpolated second derivative vs x
             xx=linspace(min(x),max(x),1e5)
             yy=p(xx)
-            yyprime=pp(xx)
+            #yyprime=pp(xx)
             # Trim to the bottom of the tail
-            maxIndex=where(yy>=(maxLight+y.min()))[0]
-            if len(maxIndex)>0:
-                xxx=xx[0:maxIndex[0]-1]
-                yyy=yy[0:maxIndex[0]-1]
-            else:
-                xxx=xx
-                yyy=yy
+            xxx, yyy = xx, yy
+            if not maxLight is None: 
+                maxIndex=where(yy>=(maxLight*(y.max()-y.min())+y.min()))[0] 
+                if len(maxIndex > 0):
+                    xxx,yyy = xx[0:maxIndex[0]-1],yy[0:maxIndex[0]-1]
             # Get the final threshold current value
             yyyprime2=ppp(xxx)
             xyTuple=(xxx[yyyprime2==max(yyyprime2)][0],yyy[yyyprime2==max(yyyprime2)][0])
-            # Plot the first and second derivatives for debugging
-            #self.main.canvas.plot(xxx,yyyprime2)
-            #QtCore.QCoreApplication.processEvents()
-            pass
         else:
             # take the first value where the second derivative is maximum (may be a nicer way to force uniqueness)
-            maxIndex=where(y>=(maxLight+y.min()))[0]
-            x=x[0:maxIndex[0]-1]
-            y=y[0:maxIndex[0]-1]
-            yprime2=yprime2[0:maxIndex[0]-1]
-            xyTuple=(x[yprime2==max(yprime2)][0],y[yprime2==max(yprime2)][0])
+            xxx, yyy, yyyprime2 = x, y, yprime2
+            if not maxLight is None:
+                maxIndex=where(y>=(maxLight*(y.max()-y.min())+y.min()))[0] 
+                xxx=xxx[0:maxIndex[0]-1]
+                yyy=yyy[0:maxIndex[0]-1]
+                yyyprime2=yprime2[0:maxIndex[0]-1]
+            xyTuple=(xxx[yyyprime2==max(yyyprime2)][0],yyy[yyyprime2==max(yyyprime2)][0])            
+        # Plot the second derivative for debugging purposes
+        """
+        self.main.canvas.plot(xxx,yyyprime2)
+        QtCore.QCoreApplication.processEvents()
+        sleep(1)
+        debug_trace()  # set a break point
+        """
+        # Recurse with larger limit if we didn't capture the maxima of 2nd derivative
+        if not maxLight is None and maxLight <= 0.5 and yyyprime2[-1] >= 0.9*yyyprime2.max():
+            return self.getThresholdCurrent(2*maxLight, INTERPOLATE)
         return xyTuple
 
     def acquireDummyData(self):
@@ -2111,3 +2114,17 @@ class DummySMU(object):
         return (0,self.current)
     def setOutputState(self,state):
         result=QtGui.QMessageBox.information(None,"Set output state","Set the state of the current source to "+str(state),QtGui.QMessageBox.Ok|QtGui.QMessageBox.Cancel)
+        
+def debug_trace():
+    '''Set a tracepoint in the Python debugger that works with Qt'''
+    from PyQt4.QtCore import pyqtRemoveInputHook
+    import pdb
+    import sys
+    pyqtRemoveInputHook()
+    # set up the debugger
+    debugger = pdb.Pdb()
+    debugger.reset()
+    # custom next to get outside of function scope
+    debugger.do_next(None) # run the next command
+    users_frame = sys._getframe().f_back # frame where the user invoked `pyqt_set_trace()`
+    debugger.interaction(users_frame, None)
