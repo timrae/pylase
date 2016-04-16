@@ -946,19 +946,16 @@ class LIV(Measurement):
         # Calculate the second derivative from a Savitky-Golay filter
         window=round(len(x)/8)
         window=window-1 if window%2 else window # window must be odd number
-        #yprime=savitzky_golay(y,31,4,1) # first derivative from smoothed data
         yprime2=savitzky_golay(y,31,4,2) # second derivative from smoothed data
         if size(yprime2)>size(y):
             # This seems to happen when the length of y is too small!
             raise Exception
         if INTERPOLATE:
             p=interpolate.interp1d(x,y,'cubic')
-            #pp=interpolate.interp1d(x,yprime,'cubic')
             ppp=interpolate.interp1d(x,yprime2,'cubic')
             # Get the interpolated second derivative vs x
             xx=linspace(min(x),max(x),1e5)
             yy=p(xx)
-            #yyprime=pp(xx)
             # Trim to the bottom of the tail
             xxx, yyy = xx, yy
             if not maxLight is None: 
