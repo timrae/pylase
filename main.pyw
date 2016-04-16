@@ -495,9 +495,8 @@ class MainWindow(QtGui.QMainWindow):
             # Check if the current item should be selected or expanded
             if selectedMeasurement is not None and selectedMeasurement == id(meas):
                 selected = parent2
-            # Expand all the top two level parent groups
+            # Expand the top level parent groups
             self.dataTree.expandItem(parent0)
-            self.dataTree.expandItem(parent1)
         # Finish up configuring how the tree displays
         if selected is not None:
             selected.setSelected(True)
